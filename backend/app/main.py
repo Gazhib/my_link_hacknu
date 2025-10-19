@@ -43,16 +43,12 @@ app.include_router(ws_chat.router)
 def healthz():
     return {"status": "ok"}
 
-# Mount static files for frontend (after API routes to avoid conflicts)
 STATIC_DIR = Path(__file__).parent.parent / "static"
 if STATIC_DIR.exists():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
     
-    # Catch-all route for React Router (must be last)
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        """Serve the React SPA for all non-API routes"""
-        # Don't intercept API routes or websocket routes
         if full_path.startswith(("api/", "ws/", "healthz", "uploads/")):
             return {"detail": "Not found"}
         

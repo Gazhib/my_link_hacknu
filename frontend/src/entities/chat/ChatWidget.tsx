@@ -27,11 +27,9 @@ export default function ChatWidget({ applicationId, chatToken }: ChatWidgetProps
   const shouldReconnect = useRef(true);
 
   const connectWebSocket = async () => {
-    // WebSocket will use cookies automatically for authentication
     const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
     let wsUrl = API_BASE_URL.replace(/^http/, 'ws') + `/ws/applications/${applicationId}`;
     
-    // Add token as query parameter if provided
     if (chatToken) {
       wsUrl += `?token=${chatToken}`;
     }
@@ -226,7 +224,6 @@ export default function ChatWidget({ applicationId, chatToken }: ChatWidgetProps
       })
     );
 
-    // Messages are automatically saved via WebSocket, no need for separate API call
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

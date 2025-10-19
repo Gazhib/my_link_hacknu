@@ -5,7 +5,6 @@ from app.core.config import settings
 
 
 def extract_text_from_pdf(path: str) -> str:
-    """Extract text from a PDF. Supports local file paths and s3://bucket/key URLs."""
     if isinstance(path, str) and path.startswith("s3://"):
         _, _, rest = path.partition("s3://")
         bucket, _, key = rest.partition("/")

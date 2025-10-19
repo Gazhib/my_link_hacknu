@@ -29,14 +29,13 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(subject=f"user:{user.id}", extra_claims={"role": user.role})
     
-    # Set HTTPOnly cookie
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
+        secure=False,
         samesite="lax",
-        max_age=3600 * 24 * 7,  # 7 days
+        max_age=3600 * 24 * 7,
     )
     
     return {"role": user.role, "email": user.email}
@@ -61,14 +60,13 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
     db.refresh(user)
     token = create_access_token(subject=f"user:{user.id}", extra_claims={"role": user.role})
     
-    # Set HTTPOnly cookie
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
+        secure=False,
         samesite="lax",
-        max_age=3600 * 24 * 7,  # 7 days
+        max_age=3600 * 24 * 7,
     )
     
     return {"role": user.role, "email": user.email}
@@ -76,11 +74,6 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
 
 @router.get("/me")
 def me(current=Depends(get_current_user), db: Session = Depends(get_db)):
-    """
-    Get current user profile information.
-    Equivalent to the Node.js /me endpoint.
-    """
-    # Fetch the user from the database to get fresh data
     user = db.query(models.User).filter(models.User.id == current.id).first()
     
     if not user:
@@ -133,9 +126,6 @@ async def upload_cv(
 
 @router.get("/me/cv-url")
 def get_cv_url(current=Depends(get_current_user), db: Session = Depends(get_db)):
-    """
-    Get the CV URL for the current user.
-    """
     user = db.query(models.User).filter(models.User.id == current.id).first()
     
     if not user:
@@ -151,22 +141,14 @@ def get_cv_url(current=Depends(get_current_user), db: Session = Depends(get_db))
 
 @router.get("/get-ws-token")
 def get_ws_token(application_id: int | None = None, current=Depends(get_current_user), db: Session = Depends(get_db)):
-    """
-    Get a WebSocket token for the current user to connect to chat.
-    The token will be used to authenticate WebSocket connections.
-    """
-    # current is already a User object from get_current_user
-    
-    # If application_id is provided, use it; otherwise find the most recent
+
     if application_id:
         app = db.get(models.Application, application_id)
         if not app:
             raise HTTPException(status_code=404, detail="Application not found")
-        # Verify the user owns this application (case-insensitive email comparison)
         if (app.candidate_email or "").lower() != (current.email or "").lower():
             raise HTTPException(status_code=403, detail="Forbidden")
     else:
-        # Find the user's most recent application
         app = (
             db.query(models.Application)
             .filter(models.Application.candidate_email == current.email)
@@ -177,8 +159,6 @@ def get_ws_token(application_id: int | None = None, current=Depends(get_current_
         if not app:
             raise HTTPException(status_code=404, detail="No application found")
     
-    # Create a token with user subject format that WebSocket expects
-    # Ensure we're using the integer user ID
     token = create_access_token(
         subject=f"user:{current.id}", 
         extra_claims={"role": current.role, "application_id": app.id}
@@ -189,8 +169,5 @@ def get_ws_token(application_id: int | None = None, current=Depends(get_current_
 
 @router.post("/logout")
 def logout(response: Response):
-    """
-    Logout the user by clearing the access_token cookie.
-    """
     response.delete_cookie(key="access_token")
     return {"message": "Logged out successfully"}

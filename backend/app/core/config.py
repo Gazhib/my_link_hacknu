@@ -31,7 +31,6 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: str | None = None
     AWS_REGION: str | None = None
     
-    # S3 bucket configuration (alternative naming)
     bucket_name: str | None = None
     bucket_region: str | None = None
     bucket_access_key: str | None = None
@@ -44,7 +43,7 @@ class Settings(BaseSettings):
     
     class Config:
         env_file = ".env"
-        extra = "allow"  # Allow extra fields from environment variables
+        extra = "allow"
 
 
 settings = Settings()

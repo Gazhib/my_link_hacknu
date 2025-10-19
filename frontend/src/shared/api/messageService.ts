@@ -20,7 +20,6 @@ export const messageService = {
     try {
       const response = await apiClient.get(`/applications/${applicationId}/messages`);
       
-      // Ensure we return an array even if the response is invalid
       if (!response.data || !Array.isArray(response.data)) {
         console.warn('Invalid message history response:', response.data);
         return [];
@@ -33,10 +32,8 @@ export const messageService = {
         throw new Error('You do not have permission to view these messages. Please make sure you are logged in.');
       }
       if (error.response?.status === 404) {
-        // Application or messages not found - return empty array
         return [];
       }
-      // For other errors, return empty array instead of throwing
       return [];
     }
   },
@@ -47,7 +44,6 @@ export const messageService = {
       return response.data;
     } catch (error: any) {
       console.error('Failed to get chat session:', error);
-      // Return default open state if endpoint fails
       return {
         state: 'open',
         exists: false,
@@ -55,7 +51,6 @@ export const messageService = {
     }
   },
 
-  // Create WebSocket connection for real-time chat
   createWebSocket(wsUrl: string): WebSocket {
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001';
     const wsBaseUrl = baseUrl.replace('http', 'ws');

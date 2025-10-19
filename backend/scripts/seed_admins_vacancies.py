@@ -6,10 +6,8 @@ from app.core.security import get_password_hash
 def run():
     db = SessionLocal()
     try:
-        # Ensure tables exist
         models.Base.metadata.create_all(bind=engine)
 
-        # Upsert admins
         admin1 = db.query(models.User).filter(models.User.email == "admin1@example.com").first()
         if not admin1:
             admin1 = models.User(email="admin1@example.com", password_hash=get_password_hash("admin1"), role="admin")
@@ -32,7 +30,6 @@ def run():
             admin2.role = "admin"
             db.commit()
 
-        # Create vacancies: frontend and backend by admin1, ml by admin2
         vacancies = [
             models.Vacancy(
                 title="Frontend Developer (React)",
@@ -62,7 +59,6 @@ def run():
                 created_by=admin2.id,
             ),
         ]
-        # Insert vacancies if they don't already exist (by title/owner)
         created_titles = []
         for v in vacancies:
             exists = db.query(models.Vacancy).filter(

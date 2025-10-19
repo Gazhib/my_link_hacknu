@@ -21,12 +21,10 @@ async def create_application(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict[str, Any]:
-    # Get the user's profile information
     user = db.query(models.User).filter(models.User.id == current_user.id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Check if user has uploaded a CV
     if not user.cv_file_path or not user.cv_text:
         raise HTTPException(status_code=400, detail="Please upload your CV in your profile before applying")
     
@@ -34,7 +32,6 @@ async def create_application(
     if not v:
         raise HTTPException(status_code=404, detail="Vacancy not found")
     
-    # Check if user already applied
     existing = db.query(models.Application).filter(
         models.Application.vacancy_id == vacancy_id,
         models.Application.candidate_email == user.email
@@ -42,11 +39,9 @@ async def create_application(
     if existing:
         raise HTTPException(status_code=409, detail="You have already applied to this vacancy")
     
-    # Use CV from user's profile
     cv_text = user.cv_text
     path = user.cv_file_path
     
-    # prepare vacancy dict for analysis
     vacancy_dict = {
         "title": v.title,
         "city": v.city,
@@ -71,7 +66,7 @@ async def create_application(
 
     app = models.Application(
         vacancy_id=v.id,
-        candidate_name=user.email.split("@")[0],  # Use email prefix as name
+        candidate_name=user.email.split("@")[0],
         candidate_email=user.email,
         cv_file_path=path,
         cv_text=cv_text,
@@ -83,7 +78,6 @@ async def create_application(
     db.commit()
     db.refresh(app)
 
-    # Generate token with user ID format that WebSocket expects
     chat_token = create_access_token(
         subject=f"user:{user.id}", 
         extra_claims={"role": user.role, "application_id": app.id}
@@ -152,19 +146,14 @@ def delete_application(application_id: int, db: Session = Depends(get_db), user=
 
 @router.get("/{application_id}/messages")
 def get_application_messages(application_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """
-    Get chat messages for an application. 
-    Accessible by the applicant who submitted it, or by employer/admin.
-    """
+
     app = db.get(models.Application, application_id)
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     
-    # Check permissions
     is_admin = (user.role or "").lower() == "admin"
     is_candidate = (user.email or "").lower() == (app.candidate_email or "").lower()
     
-    # If employer, check if they own the vacancy
     is_employer = False
     if (user.role or "").lower() == "employer":
         vac = db.get(models.Vacancy, app.vacancy_id)
@@ -173,7 +162,6 @@ def get_application_messages(application_id: int, db: Session = Depends(get_db),
     if not (is_admin or is_employer or is_candidate):
         raise HTTPException(status_code=403, detail="Forbidden")
     
-    # Get chat sessions
     sessions = (
         db.query(models.ChatSession)
         .filter(models.ChatSession.application_id == application_id)
@@ -196,8 +184,8 @@ def get_application_messages(application_id: int, db: Session = Depends(get_db),
             "id": m.id,
             "session_id": m.session_id,
             "sender": m.sender,
-            "body": m.content,  # Map 'content' to 'body' for frontend compatibility
-            "userId": None if m.sender == "bot" else 1,  # Simple mapping for frontend
+            "body": m.content,
+            "userId": None if m.sender == "bot" else 1,
             "created_at": m.created_at.isoformat(),
         }
         for m in rows
@@ -206,9 +194,6 @@ def get_application_messages(application_id: int, db: Session = Depends(get_db),
 
 @router.get("/{application_id}/session")
 def get_chat_session(application_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """
-    Get chat session status for an application.
-    """
     app = db.get(models.Application, application_id)
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")

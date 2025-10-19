@@ -10,32 +10,28 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Enable sending cookies
+  withCredentials: true,
 });
 
-// Handle responses and errors
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid, redirect to login
       console.error('Authentication failed - redirecting to login');
       window.location.href = '/auth?mode=login';
     } else if (error.response?.status === 403) {
-      // Forbidden - user doesn't have the right permissions
       console.error('Access forbidden - insufficient permissions');
     }
     return Promise.reject(error);
   }
 );
 
-// Auth client uses same backend but without /api/v1 prefix for auth endpoints
 export const authClient = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Enable sending cookies
+  withCredentials: true,
 });
 
 authClient.interceptors.response.use(

@@ -17,7 +17,6 @@ def _ensure_sample_pdfs() -> dict[str, str]:
     for filename, text in samples.items():
         path = Path(settings.UPLOAD_DIR) / filename
         if not path.exists():
-            # Create a simple blank-page PDF; cv_text will hold textual content separately
             writer = PdfWriter()
             writer.add_blank_page(width=595, height=842)
             with path.open("wb") as f:
@@ -50,7 +49,6 @@ def run():
             ]
             db.add_all(samples)
             db.commit()
-        # Seed a few demo applications linked to PDFs
         if db.query(models.Application).count() == 0:
             vacancies = db.query(models.Vacancy).all()
             if vacancies:

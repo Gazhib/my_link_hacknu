@@ -25,7 +25,6 @@ export default function VacancyListPage() {
         limit: 20,
         sort: "-createdAt",
       });
-      // Fix: extract items from response if it's an object with items property
       const vacancyList = Array.isArray(response) ? response : response.items || [];
       setVacancies(vacancyList);
       if (vacancyList.length > 0 && !previewCard) {
@@ -44,7 +43,6 @@ export default function VacancyListPage() {
 
   useEffect(() => {
     vacancyService.list().then((response) => {
-      // Fix: extract items from response if it's an object with items property
       const vacancyList = Array.isArray(response) ? response : response.items || [];
       setVacancies(vacancyList);
       if (vacancyList.length > 0 && !previewCard) {

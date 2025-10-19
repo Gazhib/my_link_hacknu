@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 _GEMINI_MODELS_CACHE: dict[str, Any] = {}
 _OPENROUTER_CLIENT: Optional[httpx.Client] = None
 
-# Configure Gemini SDK once at import time to avoid per-call overhead
 if getattr(settings, "GEMINI_API_KEY", None):
     try:
         genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -114,10 +113,6 @@ def _format_chat_context(chat_context: Optional[Sequence[dict]] = None) -> str:
 
 
 def _requirements_text(vacancy: dict) -> str:
-    """Build a concise text of vacancy requirements from a dict.
-    Accepts keys: title, city, description, min_experience_years, employment_type,
-    education_level, languages (list|csv), salary_min, salary_max, currency, skills (list|csv).
-    """
     parts: list[str] = []
     title = vacancy.get("title")
     if title:
@@ -161,7 +156,6 @@ def _requirements_text(vacancy: dict) -> str:
 
 
 def _sanitize_and_parse_json(text: str) -> Optional[dict[str, Any]]:
-    """Attempt to parse JSON, tolerating code fences and trailing text."""
     t = (text or "").strip()
     if not t:
         return None

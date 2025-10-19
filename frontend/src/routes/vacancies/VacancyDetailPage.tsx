@@ -58,10 +58,8 @@ const VacancyDetailPage: React.FC = () => {
       
       const newApplication = await applicationService.apply(Number(vacancy_id));
       
-      // Store the chat token
       setChatToken(newApplication.chat_token);
       
-      // Fetch updated applications list
       const applications = await applicationService.getMyApplications();
       const createdApp = applications.find(app => app.id === newApplication.application_id);
       if (createdApp) {

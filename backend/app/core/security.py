@@ -43,7 +43,6 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(http_bearer),
     access_token: Optional[str] = Cookie(None)
 ) -> models.User:
-    # Try to get token from cookie first, then from Authorization header
     token = access_token or (credentials.credentials if credentials else None)
     
     if not token:

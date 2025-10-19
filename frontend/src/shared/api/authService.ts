@@ -30,17 +30,15 @@ export const authService = {
       password: data.password,
     });
     
-    // Token is now in HTTPOnly cookie, no need to store it
-    // Just return the user data
+
     return {
-      id: 0, // Will be fetched from /auth/me
+      id: 0,
       email: response.data.email,
       role: response.data.role,
     };
   },
 
   async register(data: RegisterData): Promise<UserPayload> {
-    // Map frontend role to backend role
     const roleMap: Record<string, string> = {
       'CANDIDATE': 'user',
       'RECRUITER': 'employer',
@@ -53,7 +51,6 @@ export const authService = {
       role: roleMap[data.role || 'CANDIDATE'] || 'user',
     });
     
-    // Token is now in HTTPOnly cookie, no need to store it
     return {
       id: 0,
       email: response.data.email,
@@ -62,17 +59,14 @@ export const authService = {
   },
 
   async me(): Promise<UserPayload> {
-    // Cookie will be sent automatically
     const response = await apiClient.get('/auth/me');
     return response.data;
   },
 
   async logout(): Promise<void> {
-    // Call backend logout to clear the cookie
     await authClient.post('/auth/logout');
   },
 
-  // Check if user is authenticated by calling /auth/me
   async isAuthenticated(): Promise<boolean> {
     try {
       await this.me();
