@@ -1,19 +1,19 @@
-# Local Docker Setup
+# Локальный запуск в Docker
 
-Services:
+Сервисы:
 - db (Postgres 16)
 - backend (FastAPI)
-- frontend (Nginx + built React)
+- frontend (Nginx + собранный React)
 
-Run:
+Запуск:
 - docker compose up --build
 
-URLs:
- - Frontend: http://localhost:8080/
+URL‑адреса:
+ - Frontend: http://localhost:8081/
  - Backend API: http://localhost:8001/api/v1
- - Backend uploads: http://localhost:8001/uploads
- - Postgres (host): localhost:5433 (internal 5432)
+ - Загрузки бэкенда: http://localhost:8001/uploads
+ - Postgres (хост): localhost:5433 (в контейнере 5432)
 
-Notes:
-- Set GEMINI_API_KEY in your shell before `docker compose up` if you want real LLM analysis.
-- Data persists in volumes `db-data` and `backend-uploads`.
+Примечания:
+- Установите переменную окружения GEMINI_API_KEY в вашей оболочке перед `docker compose up`, если хотите реальный анализ LLM.
+- Данные сохраняются в томах `db-data` и `backend-uploads`.

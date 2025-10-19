@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import httpx
 import json
 import re
+import logging
 
 import google.generativeai as genai
 from app.core.config import settings
@@ -14,6 +15,8 @@ SYSTEM_INSTRUCTION = (
     "ВСЕ текстовые значения (включая items в mismatches и поля внутри candidate_profile) — на русском языке, краткие и по делу."
 )
 
+logger = logging.getLogger(__name__)
+
 _GEMINI_MODELS_CACHE: dict[str, Any] = {}
 _OPENROUTER_CLIENT: Optional[httpx.Client] = None
 
@@ -21,8 +24,11 @@ _OPENROUTER_CLIENT: Optional[httpx.Client] = None
 if getattr(settings, "GEMINI_API_KEY", None):
     try:
         genai.configure(api_key=settings.GEMINI_API_KEY)
-    except Exception:
-        pass
+        logger.info("Gemini SDK configured")
+    except Exception as e:
+        logger.exception("Failed to configure Gemini SDK: %s", e)
+else:
+    logger.warning("GEMINI_API_KEY is not set. Gemini provider will be unavailable.")
 
 
 def _get_http_client() -> httpx.Client:
@@ -48,6 +54,7 @@ def _normalize_model_name(name: str) -> str:
 
 def _get_model(model_name: str):
     if not settings.GEMINI_API_KEY:
+        logger.debug("Skipping Gemini model '%s' because GEMINI_API_KEY is missing", model_name)
         return None
     name = _normalize_model_name(model_name)
     if name in _GEMINI_MODELS_CACHE:
@@ -162,13 +169,15 @@ def _sanitize_and_parse_json(text: str) -> Optional[dict[str, Any]]:
         t = re.sub(r"^```json\s*", "", t, flags=re.IGNORECASE).lstrip("`").rstrip("`").strip()
     try:
         return json.loads(t)
-    except Exception:
+    except Exception as e:
         m = re.search(r"\{[\s\S]*\}$", t, flags=re.MULTILINE)
         if m:
             try:
                 return json.loads(m.group(0))
             except Exception:
+                logger.debug("Failed to parse JSON from fenced block: %s", t[:2000])
                 return None
+        logger.debug("Failed to parse JSON from model text: %s", t[:2000])
         return None
 
 
@@ -212,24 +221,35 @@ def analyze_cv_with_gemini(cv_text: str, vacancy: dict, chat_context: Optional[S
         "'Вижу, что в вакансии указан Санкт-Петербург. Вы готовы к переезду или рассматриваете удалённую работу?'\n"
         "- summary — краткая выжимка по соответствию кандидата вакансии.\n"
     )
+    if not settings.GEMINI_API_KEY:
+        logger.warning("analyze_cv_with_gemini: GEMINI_API_KEY not set; skipping Gemini calls")
+        return None
     for name in model_names:
         try:
             model = _get_model(name)
             if not model:
-                return None
+                continue
+            logger.info("Gemini: trying model '%s'", name)
             resp = model.generate_content([prompt])
             text = (getattr(resp, "text", None) or "").strip()
+            if not text:
+                logger.warning("Gemini model '%s' returned empty text", name)
+                continue
             data = _sanitize_and_parse_json(text)
             if not data:
-                raise ValueError("invalid JSON from model")
+                logger.warning("Gemini model '%s' returned non-JSON or invalid JSON", name)
+                continue
             return data
-        except Exception:
+        except Exception as e:
+            logger.exception("Gemini model '%s' failed: %s", name, e)
             continue
+    logger.error("All Gemini model attempts failed or returned invalid output")
     return None
 
 
 def analyze_cv_with_openrouter(cv_text: str, vacancy: dict, chat_context: Optional[Sequence[dict]] = None) -> Optional[dict[str, Any]]:
     if not settings.OPENROUTER_API_KEY:
+        logger.debug("OpenRouter API key not set; skipping OpenRouter")
         return None
     chat_block = _format_chat_context(chat_context)
     req_text = _requirements_text(vacancy)
@@ -269,22 +289,34 @@ def analyze_cv_with_openrouter(cv_text: str, vacancy: dict, chat_context: Option
         }
         client = _get_http_client()
         r = client.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except Exception as http_err:
+            logger.error("OpenRouter error: %s | status=%s | body=%s", http_err, r.status_code, r.text[:1000])
+            return None
         data = r.json()
         content = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
         if not content:
+            logger.warning("OpenRouter returned empty content for model '%s'", model)
             return None
-        return json.loads(content)
-    except Exception:
+        try:
+            return json.loads(content)
+        except Exception as e:
+            logger.warning("OpenRouter returned non-JSON content: %s", content[:1000])
+            return None
+    except Exception as e:
+        logger.exception("OpenRouter call failed: %s", e)
         return None
 
 
 def analyze_cv(cv_text: str, vacancy: dict, chat_context: Optional[Sequence[dict]] = None) -> Optional[dict[str, Any]]:
     provider = (settings.LLM_PROVIDER or "").lower()
+    logger.info("LLM provider selected: %s", provider or "<default>")
     if provider == "openrouter":
         out = analyze_cv_with_openrouter(cv_text, vacancy, chat_context)
         if out is not None:
             return out
+        logger.info("Falling back to Gemini after OpenRouter returned no result")
     out = analyze_cv_with_gemini(cv_text, vacancy, chat_context)
     return out
 

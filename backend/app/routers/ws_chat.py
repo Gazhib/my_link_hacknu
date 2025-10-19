@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Optional
 import asyncio
-import random
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Cookie, Query
 from sqlalchemy.orm import Session
@@ -16,47 +15,6 @@ from app.services.cv import compute_relevance
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
-
-
-# Fallback question builder when LLM cannot provide one
-def _question_for_mismatch(mismatch: str, vacancy: dict) -> Optional[str]:
-    m = (mismatch or "").strip().lower()
-    title = (vacancy.get("title") or "позиции").strip()
-    if m == "город":
-        city = (vacancy.get("city") or "").strip()
-        if city:
-            return f"Наша вакансия предполагает работу в городе {city}. Вам удобна локация или рассматриваете удалённый формат/переезд?"
-        return "Рассматриваете ли вы нужную нам локацию или удалённый формат работы?"
-    if m == "опыт":
-        return f"Расскажите, пожалуйста, подробнее про ваш релевантный опыт для {title}: сколько лет и какие задачи выполняли?"
-    if m == "языки":
-        langs = vacancy.get("languages") or []
-        if isinstance(langs, str):
-            langs = [x.strip() for x in langs.split(",") if x.strip()]
-        if langs:
-            lst = ", ".join(langs)
-            return f"Подскажите, пожалуйста, как у вас с {lst} — уровень владения и в каких задачах использовали?"
-        return "Подскажите, пожалуйста, ваш уровень владения требуемыми языками и где применяли их на практике?"
-    if m == "зарплата":
-        smin = vacancy.get("salary_min")
-        smax = vacancy.get("salary_max")
-        cur = (vacancy.get("currency") or "").strip()
-        if smin and smax:
-            return f"Уточните, пожалуйста, ваши ожидания по зарплате. Диапазон по вакансии {smin}-{smax} {cur}."
-        if smin:
-            return f"Уточните, пожалуйста, ваши ожидания по зарплате. По вакансии предлагаем от {smin} {cur}."
-        return "Подскажите, пожалуйста, ваши ожидания по зарплате?"
-    if m == "занятость":
-        emp = (vacancy.get("employment_type") or "").strip()
-        if emp:
-            return f"В вакансии указана занятость: {emp}. Насколько вам подходит такой формат?"
-        return "Какой формат занятости вам предпочтителен (полная/частичная/проектная/гибкая)?"
-    if m == "образование":
-        edu = (vacancy.get("education_level") or "").strip()
-        if edu:
-            return f"Подтвердите, пожалуйста, уровень образования: {edu} или аналогичный — верно ли это про вас?"
-        return "Расскажите, пожалуйста, про ваш уровень образования и профиль."
-    return None
 
 
 @router.websocket("/ws/applications/{application_id}")
@@ -157,7 +115,6 @@ async def ws_app_chat(
     asked = set()
     asked_texts: set[str] = set()
     max_turns = 8 
-    mismatches = (app.mismatch_reasons or "").split(",") if app.mismatch_reasons else []
     llm_first_question = None
     try:
         await websocket.send_json({"type": "analysis_status", "message": "Идёт оценка портфолио…"})
@@ -178,24 +135,7 @@ async def ws_app_chat(
     finally:
         await websocket.send_json({"type": "bot_typing", "value": False})
 
-    # Fallback: synthesize a first question from local relevance if LLM failed
-    if not llm_first_question:
-        try:
-            _, mm_fallback, _ = compute_relevance(app.cv_text or "", vacancy_dict)
-            for m in mm_fallback:
-                q = _question_for_mismatch(m, vacancy_dict)
-                if q:
-                    llm_first_question = q
-                    break
-            if not llm_first_question:
-                t = vacancy_dict.get("title") or "вакансии"
-                llm_first_question = (
-                    f"Коротко расскажите, пожалуйста, о вашем самом релевантном опыте для {t}: какие задачи решали и сколько лет этим занимались?"
-                )
-        except Exception:
-            pass
-
-    # Only close if there's truly no way to generate a question
+    # Only proceed if the LLM provided a question; otherwise, end gracefully
     if llm_first_question:
         q = llm_first_question
         await websocket.send_json({"type": "question", "id": 1, "text": q})
@@ -205,16 +145,54 @@ async def ws_app_chat(
         asked_texts.add(q.strip().lower())
         db.commit()
     else:
-        # No valid question from LLM or fallback - end gracefully
-        logger.warning(f"No questions available for application {application_id}, closing chat")
-        await websocket.send_json({
-            "type": "final_summary",
-            "message": "Спасибо за интерес! Мы рассмотрим ваше резюме и свяжемся с вами.",
-        })
-        session.state = "closed"
+        # Fallback: craft a simple first question heuristically if LLM is unavailable
+        logger.warning(f"LLM did not return an initial question for application {application_id}. Using heuristic fallback.")
+
+        def _fallback_question(mismatch: str, vacancy: dict) -> str:
+            m = (mismatch or "").strip().lower()
+            title = (vacancy.get("title") or "позиции").strip()
+            city = (vacancy.get("city") or "").strip()
+            if m == "город":
+                if city:
+                    return f"Вакансия предполагает работу в городе {city}. Вам удобно работать из этого города или рассматриваете переезд/удалённый формат?"
+                return "Подскажите, пожалуйста, из какого вы города и насколько вам удобен формат работы, который предполагает вакансия?"
+            if m == "опыт":
+                return f"Расскажите, пожалуйста, подробнее про ваш релевантный опыт для {title}: сколько лет и с какими задачами сталкивались?"
+            if m == "занятость":
+                return "Какой формат занятости вам удобен сейчас (полная, частичная, проектная, гибкий график)?"
+            if m == "образование":
+                return "Уточните, пожалуйста, ваше профильное образование или курсы/сертификаты по теме вакансии."
+            if m == "языки":
+                return "Какими языками вы владеете и на каком уровне? Есть ли опыт делового общения?"
+            if m == "зарплата":
+                return "Какие у вас ожидания по зарплате на этой позиции?"
+            # generic
+            return f"Расскажите, пожалуйста, кратко о самом релевантном опыте для {title}: что делали и какие результаты получили?"
+
+        # Update quick baseline relevance
+        score, mismatches, summary = compute_relevance(app.cv_text or "", vacancy_dict)
+        app.relevance_score = score
+        app.mismatch_reasons = ",".join(mismatches) if mismatches else None
+        app.summary_text = summary
         db.commit()
-        await websocket.close()
-        return
+
+        if mismatches:
+            q = _fallback_question(mismatches[0], vacancy_dict)
+            await websocket.send_json({"type": "question", "id": 1, "text": q})
+            db.add(models.ChatMessage(session_id=session.id, sender="bot", content=q))
+            chat_ctx.append({"role": "bot", "content": q})
+            asked.add(1)
+            asked_texts.add(q.strip().lower())
+            db.commit()
+        else:
+            await websocket.send_json({
+                "type": "final_summary",
+                "message": summary or "Спасибо! Мы оценили резюме и передадим информацию рекрутеру.",
+            })
+            session.state = "closed"
+            db.commit()
+            await websocket.close()
+            return
 
     try:
         qid = 1
@@ -230,6 +208,7 @@ async def ws_app_chat(
                     score, new_mismatches, summary = score_from_llm_result(updated, vacancy_dict)
                     next_q = (updated.get("question") or "").strip() or None
                 else:
+                    # Keep non-scripted behavior: do not synthesize questions
                     score, new_mismatches, summary = compute_relevance(app.cv_text or "", vacancy_dict)
                     next_q = None
                 
@@ -237,28 +216,19 @@ async def ws_app_chat(
                 app.relevance_score = score
                 app.mismatch_reasons = ",".join(new_mismatches) if new_mismatches else None
                 app.summary_text = summary
-                ack_messages = [
-                    "Спасибо, учёл ваш ответ.",
-                    "Принял, спасибо за ответ.",
-                    "Отлично, записал.",
-                    "Спасибо, учту при оценке.",
-                ]
-                await websocket.send_json({
-                    "type": "analysis_update",
-                    "message": random.choice(ack_messages),
-                })
 
+                # If no more mismatches or turns exhausted, end
                 if not new_mismatches or len(asked) >= max_turns:
                     await websocket.send_json({
                         "type": "final_summary",
-                        "message": "Спасибо! Мы учли ваши ответы и передадим их рекрутеру.",
+                        "message": summary or "Спасибо! Мы учли ваши ответы и передадим их рекрутеру.",
                     })
                     session.state = "closed"
                     db.commit()
                     await websocket.close()
                     break
 
-                # Prioritize LLM-generated question, end conversation if LLM fails
+                # Ask only if LLM produced a new question; otherwise end gracefully
                 if next_q and next_q.strip().lower() not in asked_texts:
                     qid += 1
                     await websocket.send_json({"type": "question", "id": qid, "text": next_q})
@@ -268,30 +238,14 @@ async def ws_app_chat(
                     asked.add(qid)
                     asked_texts.add(next_q.strip().lower())
                 else:
-                    # Fallback: try to synthesize a next question from remaining mismatches
-                    fallback_q = None
-                    for m in new_mismatches or []:
-                        q_try = _question_for_mismatch(m, vacancy_dict)
-                        if q_try and q_try.strip().lower() not in asked_texts:
-                            fallback_q = q_try
-                            break
-                    if fallback_q:
-                        qid += 1
-                        await websocket.send_json({"type": "question", "id": qid, "text": fallback_q})
-                        db.add(models.ChatMessage(session_id=session.id, sender="bot", content=fallback_q))
-                        chat_ctx.append({"role": "bot", "content": fallback_q})
-                        db.commit()
-                        asked.add(qid)
-                        asked_texts.add(fallback_q.strip().lower())
-                    else:
-                        await websocket.send_json({
-                            "type": "final_summary",
-                            "message": "Спасибо! Мы учли ваши ответы и передадим их рекрутеру.",
-                        })
-                        session.state = "closed"
-                        db.commit()
-                        await websocket.close()
-                        break
+                    await websocket.send_json({
+                        "type": "final_summary",
+                        "message": summary or "Спасибо! Мы учли ваши ответы и передадим их рекрутеру.",
+                    })
+                    session.state = "closed"
+                    db.commit()
+                    await websocket.close()
+                    break
             elif data.get("type") == "end":
                 updated = await asyncio.to_thread(analyze_cv, app.cv_text or "", vacancy_dict, chat_ctx)
                 if updated is not None:
@@ -310,7 +264,7 @@ async def ws_app_chat(
 
                 await websocket.send_json({
                     "type": "final_summary",
-                    "message": "Спасибо! Мы учли ваши ответы и передадим их рекрутеру.",
+                    "message": summary or "Спасибо! Мы учли ваши ответы и передадим их рекрутеру.",
                 })
                 await websocket.close()
                 break

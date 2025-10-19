@@ -19,16 +19,13 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
+    env_file:
+      - ../backend/.env
     environment:
       # Switch to Postgres inside compose
       DATABASE_URL: postgresql+psycopg2://smartbot:smartbot@db:5432/smartbot
       BACKEND_CORS_ORIGINS: '["http://localhost:8080","http://127.0.0.1:8080","http://localhost:8081","http://127.0.0.1:8081"]'
       JWT_SECRET: change_me_compose
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      # LLM provider config (locked to OpenRouter DeepSeek v3 unless overridden locally)
-      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
-      LLM_MODEL: ${LLM_MODEL:-deepseek/deepseek-v3}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       API_PREFIX: /api/v1
       UPLOAD_DIR: /data/uploads
       # Suppress noisy gRPC warnings from Google client libs
@@ -42,7 +39,7 @@ services:
     ports:
       - "8001:8000"  # change host port to avoid conflicts
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 12
